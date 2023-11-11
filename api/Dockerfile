@@ -1,5 +1,7 @@
 FROM ubuntu:latest
 
+ENV PYTHONDONTWRITEBYTECODE 1
+
 RUN apt update && apt install -y \
     software-properties-common \
     python-setuptools \
