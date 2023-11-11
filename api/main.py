@@ -3,6 +3,8 @@
 import logging
 import sys
 import time
+import threading
+from datetime import datetime, timezone
 
 import PyIndi
 
@@ -40,16 +42,25 @@ def main():
     logger.info("Listing devices...")
     list_devices(client)
 
-    logger.info("Waiting for Telescope...")
+    logger.info("Waiting for telescope...")
     telescope = telescope_connect(client)
+
+    logger.info("Waiting for camera...")
+    camera = camera_connect(client)
 
     logger.info("Goto Vega...")
     telescope_goto(client, telescope, VEGA)
-    logger.info("Goto Vega complete.")
+
+    logger.info("Capture image of Vega...")
+    exposure_times = [1.0, 5.0]
+    capture_image(client, camera, exposure_times)
 
     logger.info("Goto Andromeda...")
     telescope_goto(client, telescope, ANDROMEDA)
-    logger.info("Goto Andromedda complete.")
+
+    logger.info("Capture image of Andromeda...")
+    exposure_times = [1.0, 5.0]
+    capture_image(client, camera, exposure_times)
 
     logger.info("Disconnecting...")
     disconnect(client)
@@ -162,6 +173,67 @@ def telescope_goto(client, telescope, destination):
     while coords.getState() == PyIndi.IPS_BUSY:
         logger.info(f"Scope Moving {coords[0].value}, {coords[1].value}")
         time.sleep(1)
+
+
+def camera_connect(client):
+    camera = client.getDevice("CCD Simulator")
+    while not camera:
+        time.sleep(1)
+        camera = client.getDevice("CCD Simulator")
+
+    camera_con = camera.getSwitch("CONNECTION")
+    while not (camera_con):
+        time.sleep(1)
+        camera_con = camera.getSwitch("CONNECTION")
+
+    if not camera.isConnected():
+        camera_con.reset()
+        camera_con[0].setState(PyIndi.ISS_ON)  # the "CONNECT" switch
+        client.sendNewProperty(camera_con)
+
+    # Ensure the CCD simulator snoops the telescope simulator
+    # otherwise you may not have a picture of vega
+    active_devices = camera.getText("ACTIVE_DEVICES")
+    while not active_devices:
+        time.sleep(1)
+        active_devices = camera.getText("ACTIVE_DEVICES")
+
+    active_devices[0].setText("Telescope Simulator")
+    client.sendNewProperty(active_devices)
+
+    return camera
+
+
+def capture_image(client, camera, exposure_times):
+    # Inform the indi server that we want to receive the "CCD1" blob
+    client.setBLOBMode(PyIndi.B_ALSO, camera.getDeviceName(), "CCD1")
+
+    ccd1 = camera.getBLOB("CCD1")
+    while not ccd1:
+        time.sleep(1)
+        ccd1 = camera.getBLOB("CCD1")
+
+    exposure = camera.getNumber("CCD_EXPOSURE")
+    while not exposure:
+        time.sleep(1)
+        exposure = camera.getNumber("CCD_EXPOSURE")
+
+
+    # We define an event for newBlob event
+    for i, exposure_time in enumerate(exposure_times):
+        exposure[0].setValue(exposure_time)
+        client.sendNewProperty(exposure)
+        time.sleep(exposure_time + 1)
+
+        # Process the received blob
+        for blob in ccd1:
+            logger.info(f"Blob received. name: {blob.getName()} size: {blob.getSize()} format: {blob.getFormat()}")
+            data = blob.getblobdata()  # bytearray
+
+            now = datetime.now(timezone.utc)
+            formatted_date = now.strftime("%Y-%m-%dT%H-%M-%S-%f")[:-3] + "Z"
+            with open(f"/app/data/{formatted_date}.fits", "wb") as f:
+                f.write(data)
 
 if __name__ == "__main__":
     sys.exit(main())
