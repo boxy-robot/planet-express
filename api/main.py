@@ -13,7 +13,20 @@ logger = logging.getLogger(__name__)
 
 logging.basicConfig(
     format='%(asctime)s %(message)s',
+    datefmt='%H:%M:%S',
     level = logging.INFO
+)
+
+
+# Beware that ra/dec are in decimal hours/degrees
+VEGA = (
+    279.23473479 * 24.0 / 360.0,  # 18h 36m 56.33635s
+    +38.78368896 # 38d 47' 01.2802"
+)
+
+ANDROMEDA = (
+    10.68458333 * 24.0 / 360.0,  # 00h 42m 44.3s
+    +41.26916667 # 41d 16' 9"
 )
 
 
@@ -21,15 +34,44 @@ def main():
     client = IndiClient()
     client.setServer("indi", 7624)
 
-    # Connect to server
     logger.info(f"Connecting to: {client.getHost()}:{client.getPort()}...")
+    connect(client)
+
+    logger.info("Listing devices...")
+    list_devices(client)
+
+    logger.info("Waiting for Telescope...")
+    telescope = telescope_connect(client)
+
+    logger.info("Goto Vega...")
+    telescope_goto(client, telescope, VEGA)
+    logger.info("Goto Vega complete.")
+
+    logger.info("Goto Andromeda...")
+    telescope_goto(client, telescope, ANDROMEDA)
+    logger.info("Goto Andromedda complete.")
+
+    logger.info("Disconnecting...")
+    disconnect(client)
+    return 0
+
+
+def connect(client):
+    # Connect to server
     if not client.connectServer():
-        logger.error(f"Connection failed.")
-        return 1
+        logger.error("Connection failed.")
+        raise Exception("Connection failed.")
 
     # Waiting for device discovery
     time.sleep(1)
+    logger.info("Connected.")
 
+
+def disconnect(client):
+    client.disconnectServer()
+
+
+def list_devices(client):
     logger.info("Devices")
     devices = client.getDevices()
     for device in devices:
@@ -39,36 +81,87 @@ def main():
     logger.info("List of Device Properties")
     for device in devices:
         logger.info(f"-- {device.getDeviceName()}")
-        genericPropertyList = device.getProperties()
+        list_properties(device)
 
-        for genericProperty in genericPropertyList:
-            logger.info(f"   > {genericProperty.getName()} {genericProperty.getTypeAsString()}")
 
-            if genericProperty.getType() == PyIndi.INDI_TEXT:
-                for widget in PyIndi.PropertyText(genericProperty):
+def list_properties(device):
+    for prop in device.getProperties():
+        logger.info(f"   > {prop.getName()} {prop.getTypeAsString()}")
+
+        type = prop.getType()
+        match type:
+            case PyIndi.INDI_TEXT:
+                for widget in PyIndi.PropertyText(prop):
                     logger.info(f"       {widget.getName()}({widget.getLabel()}) = {widget.getText()}")
 
-            if genericProperty.getType() == PyIndi.INDI_NUMBER:
-                for widget in PyIndi.PropertyNumber(genericProperty):
+            case PyIndi.INDI_NUMBER:
+                for widget in PyIndi.PropertyNumber(prop):
                     logger.info(f"       {widget.getName()}({widget.getLabel()}) = {widget.getValue()}")
 
-            if genericProperty.getType() == PyIndi.INDI_SWITCH:
-                for widget in PyIndi.PropertySwitch(genericProperty):
+            case PyIndi.INDI_SWITCH:
+                for widget in PyIndi.PropertySwitch(prop):
                     logger.info(f"       {widget.getName()}({widget.getLabel()}) = {widget.getStateAsString()}")
 
-            if genericProperty.getType() == PyIndi.INDI_LIGHT:
-                for widget in PyIndi.PropertyLight(genericProperty):
+            case PyIndi.INDI_LIGHT:
+                for widget in PyIndi.PropertyLight(prop):
                     logger.info(f"       {widget.getLabel()}({widget.getLabel()}) = {widget.getStateAsString()}")
 
-            if genericProperty.getType() == PyIndi.INDI_BLOB:
-                for widget in PyIndi.PropertyBlob(genericProperty):
+            case PyIndi.INDI_BLOB:
+                for widget in PyIndi.PropertyBlob(prop):
                     logger.info(f"       {widget.getName()}({widget.getLabel()}) = <blob {widget.getSize()} bytes>")
 
-    # Disconnect from the indiserver
-    logger.info("Disconnecting...")
-    client.disconnectServer()
-    return 0
 
+def telescope_connect(client):
+    telescope = client.getDevice("Telescope Simulator")
+    while not telescope:
+        time.sleep(1)
+        telescope = client.getDevice("Telescope Simulator")
+
+    telescope_con = telescope.getSwitch("CONNECTION")
+    while not telescope_con:
+        time.sleep(1)
+        telescope_con = telescope.getSwitch("CONNECTION")
+
+    if not telescope.isConnected():
+        telescope_con.reset()
+        telescope_con[0].setState(PyIndi.ISS_ON)
+        client.sendNewProperty(telescope_con)
+
+    return telescope
+
+
+def telescope_goto(client, telescope, destination):
+    ra, dec = destination
+    logger.info(f"Moving: {telescope.getDeviceName()} to RA: {ra} DEC: {dec}")
+
+    # We want to set the ON_COORD_SET switch to engage tracking after goto
+    # device.getSwitch is a helper to retrieve a property vector
+    switch = telescope.getSwitch("ON_COORD_SET")
+    while not switch:
+        time.sleep(0.5)
+        switch = telescope.getSwitch("ON_COORD_SET")
+
+    # the order below is defined in the property vector, look at the standard Properties page
+    # or enumerate them in the Python shell when you're developing your program
+    switch.reset()
+    switch[0].setState(PyIndi.ISS_ON)  # index 0-TRACK, 1-SLEW, 2-SYNC
+    client.sendNewProperty(switch)
+
+    # We set the desired coordinates
+    coords = telescope.getNumber("EQUATORIAL_EOD_COORD")
+    while not coords:
+        time.sleep(1)
+        coords = telescope.getNumber("EQUATORIAL_EOD_COORD")
+
+    # Send them
+    coords[0].setValue(ra)
+    coords[1].setValue(dec)
+    client.sendNewProperty(coords)
+
+    # Wait for slew
+    while coords.getState() == PyIndi.IPS_BUSY:
+        logger.info(f"Scope Moving {coords[0].value}, {coords[1].value}")
+        time.sleep(1)
 
 if __name__ == "__main__":
     sys.exit(main())
