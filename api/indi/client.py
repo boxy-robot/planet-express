@@ -144,6 +144,17 @@ class Device(ProxyObject):
     def __str__(self):
         return self.name
 
+
+
+INDI_TYPES = {
+    "number": PyIndi.INDI_NUMBER,
+    "switch": PyIndi.INDI_SWITCH,
+    "text": PyIndi.INDI_TEXT,
+    "light": PyIndi.INDI_LIGHT,
+    "blob": PyIndi.INDI_BLOB,
+}
+
+
 class Property(ProxyObject):
     object_type = None
 
@@ -155,20 +166,24 @@ class Property(ProxyObject):
         return self.object.getDeviceName()
 
     @property
+    def label(self):
+        return self.object.getLabel()
+
+    @property
     def type(self):
-        return self.object.getType()
+        MAPPING = {v: k for k, v in INDI_TYPES.items()}
+        return MAPPING[self.object.getType()]
 
     @classmethod
     def factory(cls, object):
-        MAPPING = {
-            PyIndi.INDI_NUMBER: NumberProperty,
-            PyIndi.INDI_SWITCH: SwitchProperty,
-            PyIndi.INDI_TEXT: TextProperty,
-            PyIndi.INDI_LIGHT: LightProperty,
-            PyIndi.INDI_BLOB: BlobProperty,
-        }
-
-        cls = MAPPING[object.getType()]
+        MAPPING = {v: k for k, v in INDI_TYPES.items()}
+        cls = {
+            "number": NumberProperty,
+            "switch": SwitchProperty,
+            "text": TextProperty,
+            "light": LightProperty,
+            "blob": BlobProperty,
+        }[MAPPING[object.getType()]]
         return cls(object)
 
     @property
@@ -192,6 +207,7 @@ class NumberProperty(Property):
 class SwitchProperty(Property):
     object_type = PyIndi.PropertySwitch
 
+
 class TextProperty(Property):
     object_type = PyIndi.PropertyText
 
@@ -213,6 +229,8 @@ class BlobProperty(Property):
 
 
 class Widget(ProxyObject):
+    object_type = None
+
     def __init__(self, object):
         self.object = object
 
@@ -223,6 +241,11 @@ class Widget(ProxyObject):
     @property
     def label(self):
         return self.object.getLabel()
+
+    @property
+    def type(self):
+        MAPPING = {v: k for k, v in INDI_TYPES.items()}
+        return MAPPING[self.object_type]
 
     @classmethod
     def factory(self, object):
@@ -237,29 +260,44 @@ class Widget(ProxyObject):
         return cls(object)
 
     def __str__(self):
-        return f"{self.name}({self.label})"
-
-
-class TextWidget(Widget):
-    def __str__(self):
-        return super().__str__() + f" = {self.get_text()}"
+        return f"{self.label}: {self.value}"
 
 
 class NumberWidget(Widget):
-    def __str__(self):
-         return super().__str__() + f"= {self.get_value()}"
+    object_type = PyIndi.INDI_NUMBER
+
+    @property
+    def value(self):
+        self.get_value()
 
 
 class SwitchWidget(Widget):
-    def __str__(self):
-         return super().__str__() + f"= {self.get_state_as_string()}"
+    object_type = PyIndi.INDI_SWITCH
+
+    @property
+    def value(self):
+         return self.get_state_as_string()
+
+
+class TextWidget(Widget):
+    object_type = PyIndi.INDI_TEXT
+
+    @property
+    def value(self):
+        return self.get_text()
 
 
 class LightWidget(Widget):
-    def __str__(self):
-         return super().__str__() + f" = {self.get_state_as_string()}"
+    object_type = PyIndi.INDI_LIGHT
+
+    @property
+    def value(self):
+        self.get_state_as_string()
 
 
 class BlobWidget(Widget):
-    def __str__(self):
-         return super().__str__() + f" = <blob {self.get_size()} bytes>"
+    object_type = PyIndi.INDI_BLOB
+
+    @property
+    def value(self):
+        return f"<blob {self.get_size()}b>"

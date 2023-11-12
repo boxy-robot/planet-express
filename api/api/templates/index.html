@@ -1,0 +1,23 @@
+<html>
+    <head>
+        <title>Planet Express</title>
+        <link rel="stylesheet" href="{{ static_url('main.css') }}">
+    </head>
+
+    <body>
+        <nav>
+            <a href="/">Home</a>
+        </nav>
+
+        <h1>Devices</h1>
+        <ul>
+            {% for device in devices %}
+            <li><a href="/devices/{{ device.name }}">{{ device }}</a></li>
+            {% end %}
+        </ul>
+
+        <footer>
+            <p>INDI Client: {{ indi_client.host }}:{{ indi_client.port }}</p>
+        </footer>
+    </body>
+ </html>

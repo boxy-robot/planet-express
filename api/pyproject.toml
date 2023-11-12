@@ -1,0 +1,13 @@
+[tool.poetry]
+name = "api"
+version = "0.1.0"
+description = ""
+authors = ["None"]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+tornado = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

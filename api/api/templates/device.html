@@ -1,0 +1,41 @@
+<html>
+    <head>
+        <title>Planet Express</title>
+        <link rel="stylesheet" href="{{ static_url('main.css') }}">
+    </head>
+
+    <body>
+        <nav>
+            <a href="/">Home</a>
+        </nav>
+
+        <h1>{{ device }}</h1>
+        <p>
+            {% for group_name, group in groups.items() %}
+            <h2>{{ group_name }}</h2>
+            <ul>
+                {% for prop in group %}
+                <li>{{ prop.label }}</li>
+
+                <ul>
+                {% for widget in prop %}
+                    <li>
+                        {% if prop.type == "switch" %}
+                        <label class="switch">
+                            <input type="checkbox" {{ "checked" if widget.value == "On" else "" }}>
+                            {{ widget.label }}
+                        </label>
+                        {% else %}
+                        {{ widget }}
+                        {% end %}
+                    </li>
+                {% end %}
+                </ul>
+
+
+                {% end %}
+            </ul>
+            {% end %}
+        </p>
+    </body>
+ </html>

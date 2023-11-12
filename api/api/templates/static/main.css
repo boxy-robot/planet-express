@@ -1,0 +1,14 @@
+html {
+    max-width: 100ch;
+    padding: 2em 1em;
+    margin: auto;
+    line-height: 1.5;
+    font-size: 1.25em;
+}
+h1,h2,h3,h4,h5,h6 {
+    margin: 1em 0 1em;
+}
+p,ul,ol {
+    margin-bottom: 1em;
+    font-family: sans-serif;
+}
